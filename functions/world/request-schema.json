@@ -1,0 +1,16 @@
+{
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "title": "Input Schema (/world/{id})",
+    "type": "object",
+    "required": [
+        "type"
+    ],
+    "properties": {
+        "type": {
+            "type": "string",
+            "title": "The user type",
+            "default": "",
+            "pattern": "^[a-zA-Z0-9]+$"
+        }
+    }
+}

@@ -1,0 +1,218 @@
+service: swaggerui
+
+plugins:
+  - serverless-s3-cleaner
+  - serverless-esbuild
+  - serverless-iam-roles-per-function
+
+package:
+  individually: true
+  patterns:
+    - '!node_modules/**'
+    - '!.serverless/**'
+
+custom:
+  project: template
+  baseName: ${self:custom.project}-${self:service}-${self:provider.stage}
+  swaggerVersion: 4.19.0
+
+  esbuild:
+    packager: yarn
+    platform: node
+    target: node18
+    bundle: true
+    minify: true
+    sourcemap: true
+    
+  serverless-iam-roles-per-function:
+    defaultInherit: true
+
+  serverless-s3-cleaner:
+    buckets:
+      - ${cf:${self:custom.baseName}.ServerlessDeploymentBucketName, ''}
+
+provider:
+  name: aws
+  region: ${opt:region, 'eu-west-1'}
+  stage: ${opt:stage, 'dev'}
+  stackName: ${self:custom.baseName}
+  deploymentBucket:
+    blockPublicAccess: true
+
+  architecture: arm64
+  runtime: nodejs18.x
+  memorySize: 256
+  timeout: 30
+  versionFunctions: false
+  logRetentionInDays: 30
+  environment:
+    AWS_NODEJS_CONNECTION_REUSE_ENABLED: 1
+    NODE_OPTIONS: "--enable-source-maps"
+  
+  apiName: ${self:custom.baseName}-api
+  endpointType: REGIONAL
+
+functions:
+  swagger:
+    name: ${self:custom.baseName}-swagger
+    handler: functions/swagger/index.handler
+    events:
+      - http:
+          path: /swagger
+          cors: true
+          method: GET
+    environment:
+      POWERTOOLS_SERVICE_NAME: ${self:custom.baseName}-swagger
+      SWAGGER_VERSION: ${self:custom.swaggerVersion}
+    role: SwaggerLambdaRole
+  
+  openapi:
+    name: ${self:custom.baseName}-openapi
+    handler: functions/openapi/index.handler
+    events:
+      - http:
+          path: /openapi
+          cors: true
+          method: GET
+    environment:
+      POWERTOOLS_SERVICE_NAME: ${self:custom.baseName}-openapi
+    role: OpenapiLambdaRole
+  
+  hello:
+    name: ${self:custom.baseName}-hello
+    handler: functions/hello/index.handler
+    events:
+      - http:
+          path: /hello
+          cors: true
+          method: GET
+          integration: lambda
+          request:
+            schemas:
+              application/json: ${file(functions/hello/request-schema.json)}
+    environment:
+      POWERTOOLS_SERVICE_NAME: ${self:custom.baseName}-hello
+    role: HelloLambdaRole
+  
+  world:
+    name: ${self:custom.baseName}-world
+    handler: functions/world/index.handler
+    events:
+      - http:
+          path: /world/{id}
+          cors: true
+          method: POST
+          request:
+            schemas:
+              application/json: ${file(functions/world/request-schema.json)}
+    environment:
+      POWERTOOLS_SERVICE_NAME: ${self:custom.baseName}-world
+    role: WorldLambdaRole
+
+
+resources:
+  Resources:
+
+    SwaggerLambdaRole:
+      Type: AWS::IAM::Role
+      Properties:
+        RoleName: ${self:custom.baseName}-swagger-role
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service:
+                  - lambda.amazonaws.com
+              Action: sts:AssumeRole
+        Policies:
+          - PolicyName: ${self:custom.baseName}-swagger-policy
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - logs:CreateLogGroup
+                    - logs:CreateLogStream
+                    - logs:PutLogEvents
+                  Resource: !Sub arn:aws:logs:${self:provider.region}:${aws:accountId}:log-group:/aws/lambda/${self:custom.baseName}-swagger:log-stream:*
+                - Effect: Allow
+                  Action: 
+                    - apigateway:GET
+                  Resource: !Sub arn:aws:apigateway:${self:provider.region}::/restapis/${ApiGatewayRestApi}/stages/${self:provider.stage}/exports/oas30
+
+    OpenapiLambdaRole:
+      Type: AWS::IAM::Role
+      Properties:
+        RoleName: ${self:custom.baseName}-openapi-role
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service:
+                  - lambda.amazonaws.com
+              Action: sts:AssumeRole
+        Policies:
+          - PolicyName: ${self:custom.baseName}-openapi-policy
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - logs:CreateLogGroup
+                    - logs:CreateLogStream
+                    - logs:PutLogEvents
+                  Resource: !Sub arn:aws:logs:${self:provider.region}:${aws:accountId}:log-group:/aws/lambda/${self:custom.baseName}-openapi:log-stream:*
+                - Effect: Allow
+                  Action: 
+                    - apigateway:GET
+                  Resource: !Sub arn:aws:apigateway:${self:provider.region}::/restapis/${ApiGatewayRestApi}/stages/${self:provider.stage}/exports/oas30
+
+    HelloLambdaRole:
+      Type: AWS::IAM::Role
+      Properties:
+        RoleName: ${self:custom.baseName}-hello-role
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service:
+                  - lambda.amazonaws.com
+              Action: sts:AssumeRole
+        Policies:
+          - PolicyName: ${self:custom.baseName}-hello-policy
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - logs:CreateLogGroup
+                    - logs:CreateLogStream
+                    - logs:PutLogEvents
+                  Resource: !Sub arn:aws:logs:${self:provider.region}:${aws:accountId}:log-group:/aws/lambda/${self:custom.baseName}-hello:log-stream:*
+
+    WorldLambdaRole:
+      Type: AWS::IAM::Role
+      Properties:
+        RoleName: ${self:custom.baseName}-world-role
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service:
+                  - lambda.amazonaws.com
+              Action: sts:AssumeRole
+        Policies:
+          - PolicyName: ${self:custom.baseName}-world-policy
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - logs:CreateLogGroup
+                    - logs:CreateLogStream
+                    - logs:PutLogEvents
+                  Resource: !Sub arn:aws:logs:${self:provider.region}:${aws:accountId}:log-group:/aws/lambda/${self:custom.baseName}-world:log-stream:*
